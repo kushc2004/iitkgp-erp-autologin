@@ -1,0 +1,15 @@
+# Your real credentials - never commit these
+erpcreds.py
+token.json
+credentials.json
+
+# Cached ERP session tokens
+.session
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# macOS noise
+.DS_Store
