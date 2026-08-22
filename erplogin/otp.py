@@ -137,6 +137,7 @@ def _otp_over_imap(address, app_password, session, login_details, interval, time
                  ', '.join(b.strip('"') for b in boxes))
 
         deadline = time.time() + timeout
+        last_beat = time.time()
         while True:
             for box in boxes:
                 if not _select(conn, box):
@@ -150,10 +151,15 @@ def _otp_over_imap(address, app_password, session, login_details, interval, time
             if time.time() > deadline:
                 log.warning(
                     " No fresh OTP mail turned up in %s within %d seconds. "
-                    "Check that %s really is the inbox ERP sends the OTP to.",
+                    "Check that %s really is the inbox ERP sends the OTP to "
+                    "(ERP mails the address registered with your ERP profile, "
+                    "which may not be this Gmail account).",
                     ', '.join(b.strip('"') for b in boxes), int(timeout), address)
                 print('Falling back to manual entry.')
                 return input('Enter the OTP you received: ').strip()
+            if time.time() - last_beat >= 20:
+                log.info(" Still waiting (%ds) ...", int(time.time() - (deadline - timeout)))
+                last_beat = time.time()
             time.sleep(interval)
     finally:
         try:
