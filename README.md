@@ -21,7 +21,11 @@ erp-login  ─►  OTP fetched from Gmail  ─►  your browser opens, logged in
    is the browser.
 4. Caches valid tokens locally — reruns within the session's lifetime skip
    the whole login flow.
-5. Ships with a tiny browser extension that keeps the ERP session alive
+5. **Learns your security answers**: ERP rotates through your security
+   questions; type an answer once during a login and it's saved to your
+   credentials file automatically (only after that login succeeds). After
+   each of them has been answered once, sign-in is fully hands-off.
+6. Ships with a tiny browser extension that keeps the ERP session alive
    (`keepAlive.htm` every 20 minutes) and can sign the browser in from the
    clipboard as a fallback.
 
@@ -48,7 +52,10 @@ erp-login             # every login after that
 
 The wizard asks for your roll number, password, preferred browser, security
 question(s), and optionally the Gmail app password for automatic OTP reading.
-It stores everything in a private file (permissions `600`) outside any repo:
+Security questions can be skipped entirely — whenever a login needs an answer
+you haven't saved yet, you type it once and it's remembered after the login
+succeeds. It stores everything in a private file (permissions `600`) outside
+any repo:
 
 | OS | Config directory |
 |---|---|

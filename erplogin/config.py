@@ -52,6 +52,7 @@ def load_credentials_file(path):
         raise ImportError(f'Could not load credentials from {path!r}')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module._credentials_file = path
     return module
 
 
@@ -64,3 +65,61 @@ def load_credentials():
     if os.path.isfile(installed):
         return load_credentials_file(installed)
     return None
+
+
+def write_credentials(path, fields):
+    """Write a credentials.py file readable only by the current user."""
+    lines = [
+        '# Managed by erp-login. Edit freely.',
+        '# Contains your ERP password - do not share or commit this file.',
+        '',
+        f'ROLL_NUMBER = {fields["roll_number"]!r}',
+        f'PASSWORD = {fields["password"]!r}',
+        f'BROWSER = {fields["browser"]!r}',
+        '',
+        'SECURITY_QUESTIONS_ANSWERS = {',
+    ]
+    for question, answer in fields['questions']:
+        lines.append(f'    {question!r}: {answer!r},')
+    lines += [
+        '}',
+        '',
+        f'EMAIL_ADDRESS = {fields["email"]!r}',
+        f'EMAIL_APP_PASSWORD = {fields["app_password"]!r}',
+        '',
+    ]
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as file:
+        file.write('\n'.join(lines))
+
+
+def save_security_answer(creds, question, answer):
+    """Add a proven question->answer pair to the credentials file.
+
+    ERP rotates through a handful of security questions; each one answered
+    correctly once is stored so that login is never asked for it again.
+    Returns True when the file was updated.
+    """
+    path = getattr(creds, '_credentials_file', None)
+    if not path or not os.path.isfile(path):
+        return False
+
+    source = load_credentials_file(path)
+    questions = dict(getattr(source, 'SECURITY_QUESTIONS_ANSWERS', {}) or {})
+    if any(key.casefold() == question.casefold() for key in questions):
+        return False
+    questions[question] = answer
+
+    write_credentials(path, {
+        'roll_number': source.ROLL_NUMBER,
+        'password': source.PASSWORD,
+        'browser': getattr(source, 'BROWSER', 'default'),
+        'questions': sorted(questions.items()),
+        'email': getattr(source, 'EMAIL_ADDRESS', ''),
+        'app_password': getattr(source, 'EMAIL_APP_PASSWORD', ''),
+    })
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return True

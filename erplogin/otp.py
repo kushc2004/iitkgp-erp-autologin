@@ -72,7 +72,15 @@ def _mailboxes(conn):
 
 
 def _select(conn, mailbox):
-    status, _ = conn.select(mailbox)
+    """Select a mailbox; names with spaces (e.g. [Gmail]/All Mail) need
+    explicit IMAP quoting or the server rejects SELECT as unparsable."""
+    if ' ' in mailbox and not (mailbox.startswith('"') and mailbox.endswith('"')):
+        mailbox = f'"{mailbox}"'
+    try:
+        status, _ = conn.select(mailbox)
+    except imaplib.IMAP4.error as error:
+        log.warning(" Could not open mailbox %s: %s", mailbox.strip('"'), error)
+        return False
     return status == 'OK'
 
 

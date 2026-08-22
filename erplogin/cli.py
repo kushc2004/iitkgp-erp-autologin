@@ -19,32 +19,6 @@ def _ask(prompt, default='', secret=False):
     return answer.strip() or default
 
 
-def write_credentials(path, fields):
-    """Write a credentials.py file readable only by the current user."""
-    lines = [
-        '# Created by "erp-login --setup". Edit freely.',
-        '# Contains your ERP password - do not share or commit this file.',
-        '',
-        f'ROLL_NUMBER = {fields["roll_number"]!r}',
-        f'PASSWORD = {fields["password"]!r}',
-        f'BROWSER = {fields["browser"]!r}',
-        '',
-        'SECURITY_QUESTIONS_ANSWERS = {',
-    ]
-    for question, answer in fields['questions']:
-        lines.append(f'    {question!r}: {answer!r},')
-    lines += [
-        '}',
-        '',
-        f'EMAIL_ADDRESS = {fields["email"]!r}',
-        f'EMAIL_APP_PASSWORD = {fields["app_password"]!r}',
-        '',
-    ]
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, 'w') as file:
-        file.write('\n'.join(lines))
-
-
 def run_setup():
     """Interactive first-run wizard; returns a loaded credentials module."""
     path = config.credentials_path()
@@ -61,8 +35,9 @@ def run_setup():
         'email': '',
         'app_password': '',
     }
-    print('\nYour security question can be left out - on the next login '
-          'you will be shown it once and asked for the answer.')
+    print('\nYour security question can be left out - ERP rotates through a '
+          'few questions, and every answer you type during a login is saved '
+          'automatically once that login succeeds.')
     while True:
         question = _ask('Security question (blank to finish)')
         if not question:
@@ -76,13 +51,24 @@ def run_setup():
                                       '(myaccount.google.com/apppasswords)',
                                       secret=True)
 
-    write_credentials(path, fields)
+    config.write_credentials(path, fields)
     try:
         os.chmod(path, 0o600)
     except OSError:
         pass
     print(f'\nSaved credentials to {path}')
     return config.load_credentials_file(path)
+
+
+def _remember_answer(creds):
+    """Callback factory: persist proven security answers for next time."""
+    def on_learned(question, answer):
+        if config.save_security_answer(creds, question, answer):
+            stored = len(config.load_credentials_file(
+                creds._credentials_file).SECURITY_QUESTIONS_ANSWERS)
+            print(f'\nSaved the answer for "{question}" '
+                  f'({stored} question(s) remembered so far).')
+    return on_learned
 
 
 def main(argv=None):
@@ -113,7 +99,8 @@ def main(argv=None):
         if creds is None:
             creds = run_setup()
 
-        _, sso_token = login(creds, storage_file=config.session_path())
+        _, sso_token = login(creds, storage_file=config.session_path(),
+                             on_learned=_remember_answer(creds))
     except (KeyboardInterrupt, EOFError):
         print('\nCancelled.')
         return 130

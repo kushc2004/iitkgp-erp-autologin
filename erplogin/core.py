@@ -119,18 +119,22 @@ def normalize(text):
 
 
 def resolve_answer(security_questions, question):
-    """Look up the answer for question; fall back to asking interactively."""
+    """Look up the answer for question; fall back to asking interactively.
+
+    Returns ``(answer, asked)``.  ``asked`` is True when the user typed the
+    answer in - that pair is unproven until the login succeeds, which is
+    when the caller should save it.
+    """
     lookup = {normalize(key).casefold(): value
               for key, value in (security_questions or {}).items()}
     answer = lookup.get(normalize(question).casefold())
     if answer is None:
         readable = normalize(question)
         print(f"\nYour security question: {readable}")
-        answer = input("Answer (one-time): ").strip()
-        print('\nTo skip this prompt next time, add this to '
-              'SECURITY_QUESTIONS_ANSWERS in erpcreds.py:\n')
-        print(f'    "{readable}": "{answer}",\n')
-    return answer
+        answer = input('Answer (remembered automatically after a '
+                       'successful login): ').strip()
+        return answer, True
+    return answer, False
 
 
 def request_otp(session, login_details):
@@ -231,22 +235,24 @@ def save_tokens(storage_file, session_token, sso_token):
         log.error(" Could not write %s: %s", storage_file, error)
 
 
-def login(creds, otp_check_interval=2.0, storage_file=None):
+def login(creds, otp_check_interval=2.0, storage_file=None, on_learned=None):
     """Run the full sign-in flow and return ``(session_token, sso_token)``.
 
     ``creds`` can be any module or object exposing ROLL_NUMBER, PASSWORD and
     SECURITY_QUESTIONS_ANSWERS, plus optional EMAIL_ADDRESS and
-    EMAIL_APP_PASSWORD for automatic OTP reading.
+    EMAIL_APP_PASSWORD for automatic OTP reading.  ``on_learned(question,
+    answer)`` is called when an interactively answered security question was
+    proven correct by a successful login.
     """
     try:
-        return _login(creds, otp_check_interval, storage_file)
+        return _login(creds, otp_check_interval, storage_file, on_learned)
     except ErpLoginError:
         raise
     except requests.RequestException as error:
         raise ErpLoginError(f'Network problem talking to ERP: {error}')
 
 
-def _login(creds, otp_check_interval, storage_file):
+def _login(creds, otp_check_interval, storage_file, on_learned):
     session = requests.Session()
 
     cached = load_cached_tokens(storage_file)
@@ -265,8 +271,8 @@ def _login(creds, otp_check_interval, storage_file):
     session_token = get_sessiontoken(session)
     session_token = prepare_login_page(session, session_token)
     question = get_secret_question(session, roll_number)
-    answer = resolve_answer(getattr(creds, 'SECURITY_QUESTIONS_ANSWERS', {}),
-                            question)
+    answer, asked = resolve_answer(
+        getattr(creds, 'SECURITY_QUESTIONS_ANSWERS', {}), question)
 
     login_details = {
         'user_id': roll_number,
@@ -288,4 +294,9 @@ def _login(creds, otp_check_interval, storage_file):
     if storage_file:
         save_tokens(storage_file, session_token, sso_token)
         log.info(" Stored tokens in %s", storage_file)
+
+    # Only now is an interactively typed answer proven correct - safe to keep.
+    if asked and on_learned:
+        on_learned(normalize(question), answer)
+
     return session_token, sso_token
