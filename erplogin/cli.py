@@ -48,7 +48,7 @@ def run_setup():
                            '(blank = type OTP manually)')
     if fields['email']:
         fields['app_password'] = _ask('Google app password '
-                                      '(myaccount.google.com/apppasswords)',
+                                      '(https://myaccount.google.com/apppasswords)',
                                       secret=True)
 
     config.write_credentials(path, fields)

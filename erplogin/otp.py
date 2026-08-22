@@ -50,8 +50,8 @@ def _connect(address, app_password):
         raise ErpLoginError(
             f"Gmail login over IMAP failed ({error}). Check EMAIL_ADDRESS and "
             "EMAIL_APP_PASSWORD (a 16-character app password from "
-            "myaccount.google.com/apppasswords), and that IMAP is enabled for "
-            "the account.")
+            "https://myaccount.google.com/apppasswords), and that IMAP is "
+            "enabled for the account.")
     return conn
 
 
