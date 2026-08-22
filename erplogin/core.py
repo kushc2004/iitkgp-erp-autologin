@@ -238,6 +238,15 @@ def login(creds, otp_check_interval=2.0, storage_file=None):
     SECURITY_QUESTIONS_ANSWERS, plus optional EMAIL_ADDRESS and
     EMAIL_APP_PASSWORD for automatic OTP reading.
     """
+    try:
+        return _login(creds, otp_check_interval, storage_file)
+    except ErpLoginError:
+        raise
+    except requests.RequestException as error:
+        raise ErpLoginError(f'Network problem talking to ERP: {error}')
+
+
+def _login(creds, otp_check_interval, storage_file):
     session = requests.Session()
 
     cached = load_cached_tokens(storage_file)

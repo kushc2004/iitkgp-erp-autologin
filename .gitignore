@@ -11,5 +11,10 @@ venv/
 __pycache__/
 *.pyc
 
+# Packaging artifacts
+build/
+dist/
+*.egg-info/
+
 # macOS noise
 .DS_Store

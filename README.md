@@ -6,7 +6,7 @@ browser **already logged in** — no typing, no OTP copy-paste.
 Works on **Windows, macOS and Linux**, and you choose which browser opens.
 
 ```
-run the launcher  ─►  OTP fetched from Gmail  ─►  your browser opens, logged in
+erp-login  ─►  OTP fetched from Gmail  ─►  your browser opens, logged in
 ```
 
 ## What it does
@@ -19,8 +19,8 @@ run the launcher  ─►  OTP fetched from Gmail  ─►  your browser opens, lo
    your choice (Brave, Chrome, Edge, Firefox, Chromium, or your default).
    The ssoToken is handed over untouched so the first client to present it
    is the browser.
-4. Caches valid tokens in a local `.session` file — reruns within the
-   session's lifetime skip the whole login flow.
+4. Caches valid tokens locally — reruns within the session's lifetime skip
+   the whole login flow.
 5. Ships with a tiny browser extension that keeps the ERP session alive
    (`keepAlive.htm` every 20 minutes) and can sign the browser in from the
    clipboard as a fallback.
@@ -38,7 +38,34 @@ No Google Cloud project is needed anywhere.
 
 ## Setup
 
-### 1. Clone and install
+### Option A — install with pip (recommended)
+
+```bash
+pip install iitkgp-erp-autologin
+erp-login --setup     # one-time wizard
+erp-login             # every login after that
+```
+
+The wizard asks for your roll number, password, preferred browser, security
+question(s), and optionally the Gmail app password for automatic OTP reading.
+It stores everything in a private file (permissions `600`) outside any repo:
+
+| OS | Config directory |
+|---|---|
+| Windows | `%APPDATA%\erp-autologin\credentials.py` |
+| macOS | `~/Library/Application Support/erp-autologin/credentials.py` |
+| Linux | `~/.config/erp-autologin/credentials.py` (or `$XDG_CONFIG_HOME`) |
+
+The cached ERP session (`.session`) lives right next to it. Re-run
+`erp-login --setup` whenever you want to change something, and use
+`erp-login --no-open` to log in without launching a browser.
+
+Prefer editing by hand? Copy `erpcreds.example.py` from this repo to the
+config path above as `credentials.py`.
+
+### Option B — run from a source checkout
+
+#### 1. Clone and install
 
 **Windows (PowerShell or cmd):**
 
@@ -61,7 +88,7 @@ venv/bin/pip install -r requirements.txt
 Only two packages are needed: `requests` and `beautifulsoup4`.
 OTP reading uses Python's built-in `imaplib`.
 
-### 2. Add your credentials
+#### 2. Add your credentials
 
 ```bash
 # Windows
@@ -97,9 +124,9 @@ SECURITY_QUESTIONS_ANSWERS = {
 
 Capitalisation doesn't matter; URL-encoding oddities are handled for you.
 
-### Pick your browser
+#### Pick your browser
 
-Set `BROWSER` in `erpcreds.py`:
+Set `BROWSER` in `erpcreds.py` (or answer the prompt in `erp-login --setup`):
 
 | Value | Behaviour |
 |---|---|
@@ -118,7 +145,7 @@ Standard locations searched per browser:
 - **Linux:** whatever is on `$PATH` (`brave-browser`, `google-chrome`,
   `microsoft-edge`, `firefox`, …)
 
-### 3. Automatic OTP — create a Gmail app password
+#### Automatic OTP — create a Gmail app password
 
 No project, no consent screen, no OAuth files. One minute of setup:
 
@@ -134,17 +161,18 @@ No project, no consent screen, no OAuth files. One minute of setup:
 > — the script will simply print *"Enter the OTP"* and wait for you to type
 > it. Everything else works identically.
 
-### 4. First run
+#### Run it
 
 | Platform | Run it |
 |---|---|
+| Installed package | `erp-login` |
 | Windows | Double-click `open_erp.bat`, or run `venv\Scripts\python open_erp.py` |
 | macOS | Double-click `open_erp.command` in Finder, or run `./open_erp.sh` |
 | Linux | Run `./open_erp.sh` |
 
 You should see the handshake log end with `Generated ssoToken`, then your
 browser opens inside ERP. On later runs, while the session is still valid,
-the script reuses `.session` and finishes instantly.
+the cached tokens finish everything instantly.
 
 ## Keep-alive extension (Chromium browsers)
 
@@ -172,24 +200,36 @@ If you change extension code, hit its reload icon on the extensions page.
 | Symptom | Fix |
 |---|---|
 | Browser lands back on the ERP login page | Click the extension's **Paste token & sign in**. If it persists, clear cookies for `erp.iitkgp.ac.in` (padlock in the address bar → Site settings → Delete data) and run again. |
-| "…was not found on this … system - using the default browser" | Install the named browser, or set `BROWSER` to another value/full path from [Pick your browser](#pick-your-browser). |
+| "…was not found on this … system - using the default browser" | Install the named browser, or change `BROWSER` to another value/full path from [Pick your browser](#pick-your-browser). |
 | Nothing opens on Linux | Install `xdg-utils` (`sudo apt install xdg-utils`), which provides `xdg-open`. |
-| `Invalid security question answer` | Check the answer in `erpcreds.py`; make sure the key matches the question ERP shows you. |
+| `Invalid security question answer` | Check the answer in your credentials file; make sure the key matches the question ERP shows you. |
 | `Gmail login over IMAP failed` | App password wrong/revoked, or IMAP disabled for the account. Re-create the app password, or blank out both email fields to type OTPs manually. |
 | `Timed out waiting for the OTP mail` | OTP never arrived (check the inbox manually) or IMAP is slow — run again, or use manual mode. |
 | `Invalid OTP` | The previous attempt's OTP mail was picked up instead of the new one; run again. |
-| Wrong-password error | Update `PASSWORD` in `erpcreds.py`. |
+| Wrong-password error | Update `PASSWORD` via `erp-login --setup` or in your credentials file. |
 
 ## Security notes
 
-- `erpcreds.py`, `.session`, `token.json` and `credentials.json` are all in
-  [.gitignore](.gitignore) — your credentials can't be committed by accident.
-  Double-check before force-adding anything.
+- Credentials live in a user-private file outside the repo
+  (`credentials.py` in the config directory, or a gitignored `erpcreds.py`
+  in checkouts) — nothing sensitive can be committed by accident.
 - Everything runs locally; nothing is sent anywhere except `erp.iitkgp.ac.in`
   and Gmail's IMAP server.
 - The app password grants mailbox access only until you revoke it at
   <https://myaccount.google.com/apppasswords>. Revoke it if a machine is lost.
-- On shared machines, delete `.session` after use.
+- On shared machines, delete the `.session` file in the config directory
+  after use.
+
+## Publishing / building the package yourself
+
+```bash
+pip install -U build twine
+python -m build            # creates dist/*.whl and dist/*.tar.gz
+twine upload dist/*        # pushes to PyPI
+```
+
+Test first on <https://test.pypi.org> with `twine upload --repository testpypi dist/*`,
+then install from there to verify.
 
 ## Credits
 
