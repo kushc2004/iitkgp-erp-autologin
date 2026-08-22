@@ -8,6 +8,12 @@
 ROLL_NUMBER = "20XX XXXX XXX"
 PASSWORD = "your-erp-password"
 
+# Which browser should open ERP? One of: "default", "brave", "chrome",
+# "chromium", "edge", "firefox" - or a full path to a browser executable
+# (e.g. "/Applications/Vivaldi.app" on macOS,
+#  "C:\\...\\vivaldi.exe" on Windows, "/usr/bin/vivaldi" on Linux).
+BROWSER = "brave"
+
 # ERP asks you one security question at sign-in. Write it here exactly as ERP
 # displays it (capitalisation does not matter) with your answer as the value.
 # If the dictionary is empty the first run will ask you interactively and

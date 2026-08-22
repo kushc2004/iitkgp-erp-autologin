@@ -3,9 +3,10 @@
 One-command sign-in for the [IIT KGP ERP portal](https://erp.iitkgp.ac.in):
 the script logs in, fetches the email OTP by itself, and opens ERP in your
 browser **already logged in** — no typing, no OTP copy-paste.
+Works on **Windows, macOS and Linux**, and you choose which browser opens.
 
 ```
-double-click open_erp.command  ─►  OTP fetched from Gmail  ─►  Brave opens, logged in
+run the launcher  ─►  OTP fetched from Gmail  ─►  your browser opens, logged in
 ```
 
 ## What it does
@@ -14,9 +15,10 @@ double-click open_erp.command  ─►  OTP fetched from Gmail  ─►  Brave ope
    password + OTP) exactly like a browser does.
 2. Reads the OTP mail automatically over Gmail IMAP using a Google
    **app password**, or falls back to asking you to type the OTP.
-3. Opens `https://erp.iitkgp.ac.in/IIT_ERP3/?ssoToken=…` in **Brave**
-   (falls back to your default browser). The ssoToken is handed to the
-   browser untouched so the first client to present it is the browser.
+3. Opens `https://erp.iitkgp.ac.in/IIT_ERP3/?ssoToken=…` in the browser of
+   your choice (Brave, Chrome, Edge, Firefox, Chromium, or your default).
+   The ssoToken is handed over untouched so the first client to present it
+   is the browser.
 4. Caches valid tokens in a local `.session` file — reruns within the
    session's lifetime skip the whole login flow.
 5. Ships with a tiny browser extension that keeps the ERP session alive
@@ -25,19 +27,29 @@ double-click open_erp.command  ─►  OTP fetched from Gmail  ─►  Brave ope
 
 ## Requirements
 
-- macOS (for double-click launch and opening Brave; the Python script also
-  works on Linux if you open the printed URL yourself)
-- Python 3.9+
-- A Gmail-hosted account that receives the ERP OTP mail
-  (your `@kgpian.iitkgp.ac.in` address)
-- [Brave](https://brave.com/) installed at `/Applications/Brave Browser.app`
-  (optional)
+| | |
+|---|---|
+| OS | Windows 10/11, macOS, or any modern Linux |
+| Python | 3.9 or newer (`py --version` / `python3 --version`) |
+| Mailbox | A Gmail-hosted account that receives the ERP OTP mail (your `@kgpian.iitkgp.ac.in` address) |
+| Browser | Any; Chromium-based browsers (Brave/Chrome/Edge) also get the keep-alive extension |
 
 No Google Cloud project is needed anywhere.
 
 ## Setup
 
 ### 1. Clone and install
+
+**Windows (PowerShell or cmd):**
+
+```bat
+git clone https://github.com/kushc2004/iitkgp-erp-autologin.git
+cd iitkgp-erp-autologin
+py -m venv venv
+venv\Scripts\pip install -r requirements.txt
+```
+
+**macOS / Linux (terminal):**
 
 ```bash
 git clone https://github.com/kushc2004/iitkgp-erp-autologin.git
@@ -52,8 +64,13 @@ OTP reading uses Python's built-in `imaplib`.
 ### 2. Add your credentials
 
 ```bash
+# Windows
+copy erpcreds.example.py erpcreds.py
+notepad erpcreds.py
+
+# macOS / Linux
 cp erpcreds.example.py erpcreds.py
-open -e erpcreds.py     # or edit in any editor
+nano erpcreds.py        # or any editor
 ```
 
 Fill in:
@@ -62,6 +79,7 @@ Fill in:
 |---|---|
 | `ROLL_NUMBER` | Your roll number |
 | `PASSWORD` | Your ERP password |
+| `BROWSER` | Which browser opens ERP — see [Pick your browser](#pick-your-browser) |
 | `SECURITY_QUESTIONS_ANSWERS` | Your security question and answer |
 | `EMAIL_ADDRESS` | The mailbox that receives ERP OTP mails (optional) |
 | `EMAIL_APP_PASSWORD` | A 16-character Google app password (optional) |
@@ -79,10 +97,30 @@ SECURITY_QUESTIONS_ANSWERS = {
 
 Capitalisation doesn't matter; URL-encoding oddities are handled for you.
 
+### Pick your browser
+
+Set `BROWSER` in `erpcreds.py`:
+
+| Value | Behaviour |
+|---|---|
+| `"default"` | Opens with the system default browser (`open` / `start` / `xdg-open`) |
+| `"brave"`, `"chrome"`, `"chromium"`, `"edge"`, `"firefox"` | Auto-locates that browser in its standard install location on your OS |
+| full path | Uses exactly that executable — e.g. `/Applications/Vivaldi.app` (macOS), `C:\Program Files\Vivaldi\Application\vivaldi.exe` (Windows), `/usr/bin/vivaldi-stable` (Linux) |
+
+If a named browser isn't installed, the script tells you and falls back to
+the system default instead of failing.
+
+Standard locations searched per browser:
+
+- **Windows:** `%PROGRAMFILES%`, `%PROGRAMFILES(X86)%` and `%LOCALAPPDATA%`
+  (e.g. `%LOCALAPPDATA%\BraveSoftware\Brave-Browser\Application\brave.exe`)
+- **macOS:** `/Applications` and `~/Applications`
+- **Linux:** whatever is on `$PATH` (`brave-browser`, `google-chrome`,
+  `microsoft-edge`, `firefox`, …)
+
 ### 3. Automatic OTP — create a Gmail app password
 
-This replaces the old Google-Cloud-OAuth approach entirely: no project, no
-consent screen, no `credentials.json`, no `token.json`. One minute of setup:
+No project, no consent screen, no OAuth files. One minute of setup:
 
 1. Turn on 2-Step Verification for the account:
    <https://myaccount.google.com/signinoptions/two-step-verification>
@@ -98,41 +136,47 @@ consent screen, no `credentials.json`, no `token.json`. One minute of setup:
 
 ### 4. First run
 
-```bash
-./open_erp.command        # or: venv/bin/python open_erp.py
-```
+| Platform | Run it |
+|---|---|
+| Windows | Double-click `open_erp.bat`, or run `venv\Scripts\python open_erp.py` |
+| macOS | Double-click `open_erp.command` in Finder, or run `./open_erp.sh` |
+| Linux | Run `./open_erp.sh` |
 
-You should see the handshake log end with `Generated ssoToken`, then Brave
-opens inside ERP. On later runs, while the session is still valid, the
-script reuses `.session` and finishes instantly.
+You should see the handshake log end with `Generated ssoToken`, then your
+browser opens inside ERP. On later runs, while the session is still valid,
+the script reuses `.session` and finishes instantly.
 
-## Keep-alive extension (recommended)
+## Keep-alive extension (Chromium browsers)
 
 ERP sessions expire quickly when idle. The bundled extension pings
 `keepAlive.htm` every 20 minutes whenever an ERP tab is open, and can also
 sign the browser in from your clipboard if a hand-off ever fails:
 
-1. Open `brave://extensions` (or `chrome://extensions`)
+1. Open the extensions page in your Chromium browser:
+   `brave://extensions`, `chrome://extensions`, or `edge://extensions`
 2. Enable **Developer mode** → **Load unpacked**
 3. Select the `keepalive_extension` folder from this repo
 
 Buttons in the popup:
 
-- **Paste token & sign in** — reads the ssoToken that `open_erp.py` copies
-  to your clipboard, clears stale ERP cookies, sets the fresh one as a
-  cookie, and opens ERP. This bypasses URL-parameter quirks completely.
+- **Paste token & sign in** — reads the ssoToken the script copies to your
+  clipboard, clears stale ERP cookies, sets the fresh one as a cookie, and
+  opens ERP. This bypasses URL-parameter quirks completely.
 - **Open ERP login** — just opens the portal.
 
 If you change extension code, hit its reload icon on the extensions page.
+(Firefox users: the script works fine without the extension.)
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | Browser lands back on the ERP login page | Click the extension's **Paste token & sign in**. If it persists, clear cookies for `erp.iitkgp.ac.in` (padlock in the address bar → Site settings → Delete data) and run again. |
+| "…was not found on this … system - using the default browser" | Install the named browser, or set `BROWSER` to another value/full path from [Pick your browser](#pick-your-browser). |
+| Nothing opens on Linux | Install `xdg-utils` (`sudo apt install xdg-utils`), which provides `xdg-open`. |
 | `Invalid security question answer` | Check the answer in `erpcreds.py`; make sure the key matches the question ERP shows you. |
 | `Gmail login over IMAP failed` | App password wrong/revoked, or IMAP disabled for the account. Re-create the app password, or blank out both email fields to type OTPs manually. |
-| `Timed out waiting for the OTP mail` | OTP never arrived (check the inbox manually) — increase `timeout` or use manual mode. |
+| `Timed out waiting for the OTP mail` | OTP never arrived (check the inbox manually) or IMAP is slow — run again, or use manual mode. |
 | `Invalid OTP` | The previous attempt's OTP mail was picked up instead of the new one; run again. |
 | Wrong-password error | Update `PASSWORD` in `erpcreds.py`. |
 
@@ -152,8 +196,8 @@ If you change extension code, hit its reload icon on the extensions page.
 Request sequence based on the reverse-engineered ERP SSO flow popularised by
 [proffapt/iitkgp-erp-login-pypi](https://github.com/proffapt/iitkgp-erp-login-pypi).
 This repo is a self-contained rewrite: single small package, IMAP app-password
-OTP instead of Google OAuth, redirect-safe token hand-off to the browser, and
-a keep-alive extension.
+OTP instead of Google OAuth, redirect-safe token hand-off to the browser,
+cross-platform launchers with browser selection, and a keep-alive extension.
 
 ## License
 

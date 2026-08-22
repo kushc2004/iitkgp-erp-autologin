@@ -1,25 +1,18 @@
 #!/usr/bin/env python3
-"""Sign in to the IIT KGP ERP portal and open it, already logged in, in Brave."""
+"""Sign in to the IIT KGP ERP portal and open it, already logged in.
+
+Works on macOS, Windows and Linux. The browser to open is configured via
+BROWSER in erpcreds.py ("default", "brave", "chrome", "edge", "firefox",
+or a full path to a browser executable).
+"""
 
 import logging
-import subprocess
 import sys
-import webbrowser
 
 import erpcreds
 from erplogin import ErpLoginError, login
+from erplogin import desktop
 from erplogin.endpoints import HOMEPAGE_URL
-
-BRAVE_APP = '/Applications/Brave Browser.app'
-
-
-def open_in_browser(url):
-    """Open url in Brave when available, else the default browser."""
-    try:
-        subprocess.run(['open', '-a', BRAVE_APP, url], check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        print('Brave not found - opening the default browser instead.')
-        webbrowser.open(url)
 
 
 def main():
@@ -38,17 +31,16 @@ def main():
     url = f'{HOMEPAGE_URL}?ssoToken={sso_token}'
     print(f'Opening ERP as {erpcreds.ROLL_NUMBER}: {url}')
 
-    # The token must be presented by the browser first; the clipboard copy is
-    # a fallback for the "Paste token & sign in" button of the extension.
-    try:
-        subprocess.run(['pbcopy'], input=sso_token.encode(), check=True)
+    # Presenting the ssoToken spends it, so the browser must be the first
+    # client to open this URL. The clipboard copy feeds the extension's
+    # "Paste token & sign in" fallback button.
+    if desktop.copy_to_clipboard(sso_token):
         print('ssoToken copied to clipboard. If ERP still shows the login '
               'page, click the ERP Session Helper extension and choose '
               '"Paste token & sign in".')
-    except (OSError, subprocess.CalledProcessError):
-        pass
 
-    open_in_browser(url)
+    used = desktop.open_url(url, getattr(erpcreds, 'BROWSER', 'default'))
+    print(f'ERP opened in {used}.' if used else 'ERP opened in your default browser.')
     return 0
 
 
