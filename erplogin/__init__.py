@@ -3,4 +3,4 @@
 from .core import ErpLoginError, login
 
 __all__ = ["ErpLoginError", "login"]
-__version__ = "1.0.2"
+__version__ = "1.0.3"

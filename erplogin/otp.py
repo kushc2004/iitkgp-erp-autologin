@@ -85,11 +85,11 @@ def _select(conn, mailbox):
 
 
 def _latest_match(conn):
-    """Message id of the newest OTP mail in the selected mailbox, or None."""
+    """UID of the newest OTP mail in the selected mailbox, or None."""
     # NOOP makes Gmail notice mail that arrived after this connection opened;
     # without it SEARCH can keep returning the same stale result forever.
     conn.noop()
-    status, data = conn.search(None, f'(SUBJECT "{OTP_SUBJECT}")')
+    status, data = conn.uid('SEARCH', None, f'(SUBJECT "{OTP_SUBJECT}")')
     if status != 'OK':
         return None
     ids = data[0].split()
@@ -117,15 +117,51 @@ def _extract_code(message):
     return candidates[-1] if candidates else None
 
 
+def _trash_folder(conn):
+    """The server's Trash mailbox, found via its \\Trash attribute."""
+    try:
+        status, lines = conn.list()
+    except imaplib.IMAP4.error:
+        return None
+    if status != 'OK':
+        return None
+    for raw in lines or []:
+        line = raw.decode('utf-8', 'replace')
+        if '\\trash' in line.lower():
+            quoted = re.findall(r'"([^"]*)"', line)
+            if quoted:
+                return quoted[-1]
+    return None
+
+
+def _delete_message(conn, message_id):
+    """Remove the consumed OTP mail - into Trash where one exists.
+
+    Everything runs through UID commands, so UID EXPUNGE can only ever
+    remove this one message, never other mails pending deletion.
+    """
+    try:
+        trash = _trash_folder(conn)
+        if trash:
+            dest = f'"{trash}"' if ' ' in trash else trash
+            conn.uid('COPY', message_id, dest)
+        conn.uid('STORE', message_id, '+FLAGS', r'\Deleted')
+        conn.uid('EXPUNGE', message_id)
+        log.info(" Removed the used OTP mail%s",
+                 f' (kept a copy in {trash})' if trash else '')
+    except imaplib.IMAP4.error as error:
+        log.warning(" Could not delete the OTP mail (%s) - it is safe to "
+                    'remove it yourself.', error)
+
+
 def _fetch_and_extract(conn, message_id):
-    status, data = conn.fetch(message_id, '(RFC822)')
+    status, data = conn.uid('FETCH', message_id, '(RFC822)')
     if status != 'OK' or data[0] is None:
         return None
     message = email.message_from_bytes(data[0][1])
     code = _extract_code(message)
     if code is not None:
-        # Mark as read instead of deleting anything.
-        conn.store(message_id, '+FLAGS', '\\Seen')
+        _delete_message(conn, message_id)
     return code
 
 
