@@ -210,20 +210,51 @@ async function readFeedAccount(url) {
   // Gmail answers with a sign-in HTML page when that account index is
   // not reachable in this browser profile.
   if (!/<feed[\s>]/i.test(text)) throw new Error('not signed into this account');
-  return parseAtomEntries(text).filter((e) => e.title.includes(OTP_SUBJECT));
+  return parseAtomEntries(text);
+}
+
+/** Loose match: any unread mail titled like an OTP mail. */
+function isOtpMail(entry) {
+  return entry.title.toLowerCase().includes('otp');
+}
+
+function accountLabel(url) {
+  return 'u/' + url.match(/\/u\/(\d+)\//)[1];
 }
 
 async function snapshotFeedBaselines(urls) {
   const baselines = {};
   for (const url of urls) {
     try {
-      const matches = await readFeedAccount(url);
-      baselines[url] = matches.length ? matches[matches.length - 1].id : '';
+      const otpMails = (await readFeedAccount(url)).filter(isOtpMail);
+      // Remember every id we've already seen. Gmail's Atom feed lists
+      // newest-first, so "the last entry" is useless as a marker - only a
+      // set difference tells us which mail is genuinely new.
+      baselines[url] = otpMails.map((entry) => entry.id);
     } catch (e) {
       baselines[url] = null;   // account not reachable right now
     }
   }
   return baselines;
+}
+
+/** Per-account census of what the feed actually shows, for diagnosis. */
+async function feedCensus(urls) {
+  const parts = [];
+  for (const url of urls) {
+    const label = accountLabel(url);
+    try {
+      const entries = await readFeedAccount(url);
+      const otpMails = entries.filter(isOtpMail);
+      let detail = `${entries.length} unread, ${otpMails.length} otp-like`;
+      const latest = otpMails[otpMails.length - 1] || entries[entries.length - 1];
+      if (latest) detail += `, latest title: "${latest.title.slice(0, 50)}"`;
+      parts.push(`${label}: ${detail}`);
+    } catch (e) {
+      parts.push(`${label}: unreachable (${String(e.message || e).slice(0, 40)})`);
+    }
+  }
+  return parts.join(' | ');
 }
 
 // State of the current OTP wait, so the popup's "check again" button can
@@ -234,15 +265,16 @@ let otpWaitRunId = 0;
 async function scanAccountsForOtp(baselines, urls) {
   for (const url of urls) {
     if (baselines[url] === null) continue;   // unreachable account
-    let matches;
+    let otpMails;
     try {
-      matches = await readFeedAccount(url);
+      otpMails = (await readFeedAccount(url)).filter(isOtpMail);
     } catch (e) {
       continue;
     }
-    const newest = matches[matches.length - 1];
-    if (newest && newest.id !== baselines[url]) {
-      const code = extractOtp(`${newest.title}\n${newest.summary}`);
+    const known = baselines[url] || [];
+    const fresh = otpMails.find((entry) => !known.includes(entry.id));
+    if (fresh) {
+      const code = extractOtp(`${fresh.title}\n${fresh.summary}`);
       if (code) return { code, url };
     }
   }
@@ -266,8 +298,8 @@ async function obtainOtp(baselines, urls) {
     return askUser('otp', {});
   }
 
-  const labels = reachable.map((url) => 'u/' + url.match(/\/u\/(\d+)\//)[1]);
-  addLog(`Waiting for the OTP mail (watching ${labels.join(', ')})...`);
+  const labels = reachable.map(accountLabel);
+  addLog(`Watching for the OTP mail (${labels.join(', ')})...`);
 
   const runId = ++otpWaitRunId;
   CURRENT_OTP_WAIT = { runId, baselines, urls };
@@ -280,7 +312,7 @@ async function obtainOtp(baselines, urls) {
     const hit = await scanAccountsForOtp(baselines, urls);
     if (hit || runId !== otpWaitRunId) {
       if (hit) {
-        addLog(`Found the fresh OTP mail in u/${hit.url.match(/\/u\/(\d+)\//)[1]}.`);
+        addLog(`Found the fresh OTP mail in ${accountLabel(hit.url)}.`);
         return hit.code;
       }
       break;   // superseded by a manual entry or a forced check
@@ -300,6 +332,10 @@ async function obtainOtp(baselines, urls) {
     await new Promise(() => {});   // superseded; this invocation is retired
   }
 
+  // Show what each feed actually contains so failures are diagnosable.
+  try {
+    addLog(`Feed check: ${await feedCensus(urls)}`);
+  } catch (e) { /* diagnostics must never break the fallback */ }
   addLog('Could not read it automatically - enter the code manually.');
   setState({ awaiting: 'otp' });
   return askUser('otp', {});

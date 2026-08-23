@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IIT KGP ERP Auto-Login",
-  "version": "2.0.2",
+  "version": "2.0.4",
   "description": "One-click sign-in for the IIT KGP ERP portal with automatic OTP reading from Gmail and session keep-alive.",
   "permissions": ["alarms", "tabs", "cookies", "storage"],
   "host_permissions": ["https://erp.iitkgp.ac.in/*", "https://mail.google.com/*"],
