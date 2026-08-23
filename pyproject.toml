@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iitkgp-erp-autologin"
-version = "1.0.3"
+version = "1.0.4"
 description = "One-command sign-in for the IIT KGP ERP portal with automatic Gmail OTP retrieval"
 readme = "README.md"
 requires-python = ">=3.9"
