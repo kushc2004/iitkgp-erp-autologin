@@ -85,10 +85,29 @@ async function saveSettings(patch) {
 // ------------------------------------------------------------- prompts --
 
 let pendingPrompt = null;   // { resolve }
+let promptKeepaliveTimer = null;
+
+// While waiting for human input nothing else happens, which would let the
+// MV3 worker be killed after ~30s. Touching an extension API on a short
+// interval resets its idle timer for as long as the prompt stays open.
+function startPromptKeepalive() {
+  stopPromptKeepalive();
+  promptKeepaliveTimer = setInterval(() => {
+    chrome.storage.local.get('_promptKeepalive');
+  }, 20000);
+}
+
+function stopPromptKeepalive() {
+  if (promptKeepaliveTimer) {
+    clearInterval(promptKeepaliveTimer);
+    promptKeepaliveTimer = null;
+  }
+}
 
 function askUser(kind, payload) {
   return new Promise((resolve) => {
     pendingPrompt = { resolve };
+    startPromptKeepalive();
     setState({ awaiting: kind, ...payload });
   });
 }
@@ -96,6 +115,7 @@ function askUser(kind, payload) {
 function submitPrompt(value) {
   const prompt = pendingPrompt;
   pendingPrompt = null;
+  stopPromptKeepalive();
   setState({ awaiting: null });
   if (prompt) prompt.resolve(String(value == null ? '' : value).trim());
 }
@@ -182,9 +202,12 @@ function feedUrls(gmailAccount) {
 
 async function readFeedAccount(url) {
   const response = await fetch(url, { credentials: 'include' });
-  if (!response.ok) return [];
-  const entries = parseAtomEntries(await response.text());
-  return entries.filter((e) => e.title.includes(OTP_SUBJECT));
+  if (!response.ok) throw new Error(`feed responded ${response.status}`);
+  const text = await response.text();
+  // Gmail answers with a sign-in HTML page when that account index is
+  // not reachable in this browser profile.
+  if (!/<feed[\s>]/i.test(text)) throw new Error('not signed into this account');
+  return parseAtomEntries(text).filter((e) => e.title.includes(OTP_SUBJECT));
 }
 
 async function snapshotFeedBaselines(urls) {
@@ -194,18 +217,30 @@ async function snapshotFeedBaselines(urls) {
       const matches = await readFeedAccount(url);
       baselines[url] = matches.length ? matches[matches.length - 1].id : '';
     } catch (e) {
-      baselines[url] = null;   // unreachable account
+      baselines[url] = null;   // account not reachable right now
     }
   }
   return baselines;
 }
 
 async function obtainOtp(baselines, urls) {
-  addLog('Waiting for the OTP mail...');
-  const deadline = Date.now() + OTP_FEED_TIMEOUT_MS;
+  const reachable = urls.filter((url) => baselines[url] !== null);
+  if (!reachable.length) {
+    addLog('No Gmail account is reachable from this browser '
+         + '(sign in to Gmail, check Settings -> Gmail account index).');
+    setState({ awaiting: 'otp' });
+    return askUser('otp', {});
+  }
+
+  const labels = reachable.map((url) => 'u/' + url.match(/\/u\/(\d+)\//)[1]);
+  addLog(`Waiting for the OTP mail (watching ${labels.join(', ')})...`);
+
+  const startedAt = Date.now();
+  const deadline = startedAt + OTP_FEED_TIMEOUT_MS;
+  let lastBeat = startedAt;
+
   while (Date.now() < deadline) {
-    for (const url of urls) {
-      if (baselines[url] === null) continue;   // account not reachable
+    for (const url of reachable) {
       let matches;
       try {
         matches = await readFeedAccount(url);
@@ -215,9 +250,20 @@ async function obtainOtp(baselines, urls) {
       const newest = matches[matches.length - 1];
       if (newest && newest.id !== baselines[url]) {
         const code = extractOtp(`${newest.title}\n${newest.summary}`);
-        if (code) return code;
+        if (code) {
+          addLog(`Found the fresh OTP mail in u/${url.match(/\/u\/(\d+)\//)[1]}.`);
+          return code;
+        }
       }
     }
+    if (Date.now() - lastBeat >= 15000) {
+      addLog(`Still waiting (${Math.round((Date.now() - startedAt) / 1000)}s)...`);
+      lastBeat = Date.now();
+    }
+
+    // A plain setTimeout chain does not keep an MV3 service worker alive;
+    // touching an extension API resets its idle timer.
+    await chrome.storage.local.get('_otpPollKeepalive');
     await new Promise((r) => setTimeout(r, OTP_FEED_POLL_MS));
   }
 
