@@ -227,17 +227,6 @@ If you change extension code, hit its reload icon on the extensions page.
 - On shared machines, delete the `.session` file in the config directory
   after use.
 
-## Publishing / building the package yourself
-
-```bash
-pip install -U build twine
-python -m build            # creates dist/*.whl and dist/*.tar.gz
-twine upload dist/*        # pushes to PyPI
-```
-
-Test first on <https://test.pypi.org> with `twine upload --repository testpypi dist/*`,
-then install from there to verify.
-
 ## Credits
 
 Request sequence based on the reverse-engineered ERP SSO flow popularised by
