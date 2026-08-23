@@ -8,6 +8,7 @@ credentials.json
 
 # Python
 venv/
+.venv/
 __pycache__/
 *.pyc
 
@@ -15,9 +16,7 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+*.zip
 
 # macOS noise
 .DS_Store
-
-venv
-.venv
