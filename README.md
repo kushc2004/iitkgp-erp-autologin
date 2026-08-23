@@ -64,9 +64,10 @@ Signed in! Opening ERP...
 ```
 
 The OTP is read from the Gmail feed of the account signed into this
-browser (no app password, no Google Cloud project). If it can't be read
-within a minute — not signed in, feed hiccup, whatever — the popup asks
-you to type the six digits yourself, so login never dead-ends.
+browser (no app password, no Google Cloud project). It polls for about
+half a minute; if the feed hasn't caught up you can hit **Mail arrived -
+check now** for an instant re-scan or simply type the six digits
+yourself — login never dead-ends.
 
 While any ERP tab is open, the extension pings `keepAlive.htm` every
 20 minutes so the session doesn't idle out.

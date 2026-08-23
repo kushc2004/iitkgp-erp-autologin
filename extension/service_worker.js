@@ -24,7 +24,7 @@ const OTP_MISMATCH = 'ERROR:Email OTP mismatch';
 
 const OTP_SUBJECT = 'OTP for Sign In in ERP Portal of IIT Kharagpur';
 const OTP_FEED_POLL_MS = 3000;
-const OTP_FEED_TIMEOUT_MS = 60000;
+const OTP_FEED_TIMEOUT_MS = 30000;
 
 const ALARM_NAME = 'erp-keep-alive';
 const KEEP_ALIVE_URL = ERP_URL + 'keepAlive.htm';
@@ -201,7 +201,10 @@ function feedUrls(gmailAccount) {
 }
 
 async function readFeedAccount(url) {
-  const response = await fetch(url, { credentials: 'include' });
+  // A nonce defeats intermediate caches: the feed is a legacy endpoint that
+  // otherwise can serve minutes-old content.
+  const busted = url + (url.includes('?') ? '&' : '?') + '_=' + Date.now();
+  const response = await fetch(busted, { credentials: 'include' });
   if (!response.ok) throw new Error(`feed responded ${response.status}`);
   const text = await response.text();
   // Gmail answers with a sign-in HTML page when that account index is
@@ -223,6 +226,37 @@ async function snapshotFeedBaselines(urls) {
   return baselines;
 }
 
+// State of the current OTP wait, so the popup's "check again" button can
+// trigger an immediate scan.
+let CURRENT_OTP_WAIT = null;   // { runId, baselines, urls }
+let otpWaitRunId = 0;
+
+async function scanAccountsForOtp(baselines, urls) {
+  for (const url of urls) {
+    if (baselines[url] === null) continue;   // unreachable account
+    let matches;
+    try {
+      matches = await readFeedAccount(url);
+    } catch (e) {
+      continue;
+    }
+    const newest = matches[matches.length - 1];
+    if (newest && newest.id !== baselines[url]) {
+      const code = extractOtp(`${newest.title}\n${newest.summary}`);
+      if (code) return { code, url };
+    }
+  }
+  return null;
+}
+
+function resolvePending(value) {
+  const prompt = pendingPrompt;
+  pendingPrompt = null;
+  stopPromptKeepalive();
+  setState({ awaiting: null });
+  if (prompt) prompt.resolve(value);
+}
+
 async function obtainOtp(baselines, urls) {
   const reachable = urls.filter((url) => baselines[url] !== null);
   if (!reachable.length) {
@@ -235,26 +269,21 @@ async function obtainOtp(baselines, urls) {
   const labels = reachable.map((url) => 'u/' + url.match(/\/u\/(\d+)\//)[1]);
   addLog(`Waiting for the OTP mail (watching ${labels.join(', ')})...`);
 
+  const runId = ++otpWaitRunId;
+  CURRENT_OTP_WAIT = { runId, baselines, urls };
+
   const startedAt = Date.now();
   const deadline = startedAt + OTP_FEED_TIMEOUT_MS;
   let lastBeat = startedAt;
 
-  while (Date.now() < deadline) {
-    for (const url of reachable) {
-      let matches;
-      try {
-        matches = await readFeedAccount(url);
-      } catch (e) {
-        continue;
+  while (Date.now() < deadline && runId === otpWaitRunId) {
+    const hit = await scanAccountsForOtp(baselines, urls);
+    if (hit || runId !== otpWaitRunId) {
+      if (hit) {
+        addLog(`Found the fresh OTP mail in u/${hit.url.match(/\/u\/(\d+)\//)[1]}.`);
+        return hit.code;
       }
-      const newest = matches[matches.length - 1];
-      if (newest && newest.id !== baselines[url]) {
-        const code = extractOtp(`${newest.title}\n${newest.summary}`);
-        if (code) {
-          addLog(`Found the fresh OTP mail in u/${url.match(/\/u\/(\d+)\//)[1]}.`);
-          return code;
-        }
-      }
+      break;   // superseded by a manual entry or a forced check
     }
     if (Date.now() - lastBeat >= 15000) {
       addLog(`Still waiting (${Math.round((Date.now() - startedAt) / 1000)}s)...`);
@@ -267,7 +296,11 @@ async function obtainOtp(baselines, urls) {
     await new Promise((r) => setTimeout(r, OTP_FEED_POLL_MS));
   }
 
-  addLog('Could not read the OTP automatically - enter it manually.');
+  if (runId !== otpWaitRunId) {
+    await new Promise(() => {});   // superseded; this invocation is retired
+  }
+
+  addLog('Could not read it automatically - enter the code manually.');
   setState({ awaiting: 'otp' });
   return askUser('otp', {});
 }
@@ -426,6 +459,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         submitPrompt(message.value);
         sendResponse({ ok: true });
         break;
+      case 'check-now': {
+        // The user can see the mail has arrived; scan immediately and, on a
+        // hit, resolve the pending OTP prompt with the found code.
+        (async () => {
+          const wait = CURRENT_OTP_WAIT;
+          if (!wait) { sendResponse({ ok: false }); return; }
+          const hit = await scanAccountsForOtp(wait.baselines, wait.urls);
+          if (hit) {
+            otpWaitRunId++;                       // retire the polling loop
+            addLog(`Found the fresh OTP mail in u/${hit.url.match(/\/u\/(\d+)\//)[1]}.`);
+            resolvePending(hit.code);
+            sendResponse({ ok: true, found: true });
+          } else {
+            addLog('The feed does not show the new mail yet - give it a few seconds.');
+            sendResponse({ ok: true, found: false });
+          }
+        })();
+        return;   // async sendResponse
+      }
       case 'save-settings':
         await saveSettings(message.settings || {});
         setState({ answeredCount: Object.keys((message.settings || {}).answers || {}).length });

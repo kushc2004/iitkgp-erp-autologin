@@ -95,6 +95,9 @@ els.open.addEventListener('click', () => {
   send({ type: 'open-erp' });
 });
 
+const checkNow = $('check-now');
+if (checkNow) checkNow.addEventListener('click', () => send({ type: 'check-now' }));
+
 if (els.save) els.save.addEventListener('click', saveClicked);
 
 document.querySelectorAll('[data-submit]').forEach((button) => {
